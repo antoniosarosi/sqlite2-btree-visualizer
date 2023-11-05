@@ -62,7 +62,7 @@ right_child: 25
 ...
 ```
 
-The function is called [here](./src/btree.c#L2659), you can comment it out to
+The function is called [here](./src/btree.c#L2658), you can comment it out to
 remove the print statements. As for generating the BTree I suggest creating a
 simple table and populating it with about 1000 records. First, if you're still
 located in the `build` directory, go back to the root, then create the database
@@ -120,6 +120,6 @@ Now you can close the shell again and you should see all the pages in your file.
 
 I added [`.vscode/launch.json`](./.vscode/launch.json) to easily step through
 the source. I suggest setting up a break point on line 1000 at
-[`./src/shell.c`](./src/shell.c#1000) and then clicking on the Run/Debug icon.
+[`./src/shell.c`](./src/shell.c#L1000) and then clicking on the Run/Debug icon.
 You can see where the code goes from there by writing commands or SQL in the
 `sqlite` shell that opens up.
