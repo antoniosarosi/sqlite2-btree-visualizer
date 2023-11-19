@@ -977,6 +977,11 @@ static int do_meta_command(char *zLine, struct callback_data *p){
     }
   }
   else if (c == 'p' && n > 1 && strncmp(azArg[0], "path", n) == 0){
+    if (nArg < 2) {
+      fprintf(stderr, "Missing argument: ON|OFF\n");
+      return SQLITE_OK;
+    }
+
     char *z = azArg[1];
     for(int j=0; z[j]; j++)
         if( isupper(z[j]) )
@@ -992,6 +997,11 @@ static int do_meta_command(char *zLine, struct callback_data *p){
   }
 
   else if (c == 'k' && n > 1 && strncmp(azArg[0], "keyhash", n) == 0){
+    if (nArg < 2) {
+      fprintf(stderr, "Missing argument: ON|OFF\n");
+      return SQLITE_OK;
+    }
+
     char *z = azArg[1];
     for(int j=0; z[j]; j++)
         if( isupper(z[j]) )
