@@ -204,7 +204,7 @@ You can also experiment with different page sizes by changing the value of
 ## Debugging
 
 I added [`.vscode/launch.json`](./.vscode/launch.json) to easily step through
-the source. I suggest setting up a break point on line 1081 at
-[`./src/shell.c`](./src/shell.c#L1081) and then clicking on the Run/Debug icon.
+the source. I suggest setting up a break point on line 1090 at
+[`./src/shell.c`](./src/shell.c#L1090) and then clicking on the Run/Debug icon.
 You can see where the code goes from there by writing commands or SQL in the
 `sqlite` shell that opens up.
