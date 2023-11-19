@@ -181,22 +181,20 @@ The data, `25`, is the `ROWID`, not the `PRIMARY KEY` value. The `ROWID` is a
 unique identifier for a single row that is independent of primary keys or other
 unique fields. The `ROWID` starts at `1` and increments by `1` every time you
 add a new row, and since we added primary keys in ascending order then
-`ROWID == PRIMARY KEY`.
+`ROWID == PRIMARY KEY`, but this isn't always true. The index B-Tree doesn't
+store primary keys as values.
 
-The last user we added has `id=10000` and `ROWID=10000`, if you add a new user
-with `id=20000` you'll see that `ROWID=10001`, not `20000`. You can also insert
-10000 users in reverse order by tweaking the script that generates the SQL file
-and you'll see that `ROWID != PRIMARY KEY` in all cases.
-
-Now back to B-Tree traversal. In this example, key `0G1v` is located on page
-`8` and points to row ID `25`. You can see in the path above that the index
-traversal starts at page `3` and stops at `8` and then the data traversal starts
-at page `4` and stops at `6`.
+For example, the last user we added has `id=10000` and `ROWID=10000`, but if you
+add a new user with `id=20000` you'll see that `ROWID=10001`, not `20000`. You
+can also insert 10000 users in reverse order by tweaking the script that
+generates the SQL file and you'll see that `ROWID != PRIMARY KEY` in all cases.
 
 The index B-Tree is only used to obtain the `ROWID` of the record, and then the
 data B-Tree is used to get the actual tuple (columns). You can
-<kbd>CTRL</kbd> + <kbd>F</kbd> the `ROWID` in the data file to check that
-the B-Tree traversal is correct.
+<kbd>CTRL</kbd> + <kbd>F</kbd> the `ROWID` in the `users.data` file to check
+that the B-Tree traversal is correct. In this example, data B-Tree traversal
+starts at page `4` (the root) and stops at page `6` because that's where
+`ROWID=25` is located. The value of the node the actual record data.
 
 You can also experiment with different page sizes by changing the value of
 `SQLITE_PAGE_SIZE` at [`./src/pager.h`](./src/pager.h#27).
@@ -204,7 +202,7 @@ You can also experiment with different page sizes by changing the value of
 ## Debugging
 
 I added [`.vscode/launch.json`](./.vscode/launch.json) to easily step through
-the source. I suggest setting up a break point on line 1090 at
-[`./src/shell.c`](./src/shell.c#L1090) and then clicking on the Run/Debug icon.
+the source. I suggest setting up a break point on line 1091 at
+[`./src/shell.c`](./src/shell.c#L1091) and then clicking on the Run/Debug icon.
 You can see where the code goes from there by writing commands or SQL in the
 `sqlite` shell that opens up.
