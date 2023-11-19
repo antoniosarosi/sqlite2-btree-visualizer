@@ -1,9 +1,10 @@
 # SQLite 2.8.1 for learning / debugging
 
-Original source code downloaded from here:
+Modified version of SQLite 2.8.1 that allows visualizing the BTree structure
+easily. Original source code downloaded from here:
 https://www.sqlite.org/src/info/590f963b6599e4e2
 
-## Why SQLite 2.8.1 ?
+## Why SQLite 2.8.1?
 
 I wanted to visualize how the BTree pages evolve on disk as records are added to
 database tables. Initially, I cloned the
@@ -34,92 +35,162 @@ make
 
 ## Visualizing the BTree
 
-SQLite 2.x.x has the function `sqliteBtreePageDump` which
-prints the entire BTree to STDOUT, including page numbers, children pointers and
-table data:
-
-```text
-PAGE 4:
-cell  0: i=8..47      chld=48   nk=4    nd=21   payload=...\...347.User Nam
-right_child: 49
-freeblock  0: i=48..1023   size=976  total=976
-
-PAGE 48:
-cell  0: i=8..43      chld=5    nk=4    nd=19   payload=.......28.User Name
-cell  1: i=44..79     chld=6    nk=4    nd=19   payload=...:...57.User Name
-cell  2: i=80..115    chld=9    nk=4    nd=19   payload=...W...86.User Name
-cell  3: i=116..155   chld=11   nk=4    nd=21   payload=...r...113.User Nam
-cell  4: i=156..195   chld=12   nk=4    nd=21   payload=.......139.User Nam
-cell  5: i=196..235   chld=14   nk=4    nd=21   payload=.......165.User Nam
-cell  6: i=236..275   chld=15   nk=4    nd=21   payload=.......191.User Nam
-cell  7: i=276..315   chld=17   nk=4    nd=21   payload=.......217.User Nam
-cell  8: i=316..355   chld=19   nk=4    nd=21   payload=.......243.User Nam
-cell  9: i=356..395   chld=20   nk=4    nd=21   payload=.......269.User Nam
-cell 10: i=396..435   chld=22   nk=4    nd=21   payload=...(...295.User Nam
-cell 11: i=436..475   chld=23   nk=4    nd=21   payload=...B...321.User Nam
-right_child: 25
-
-...
-```
-
-The function is called [here](./src/btree.c#L2658), you can comment it out to
-remove the print statements. As for generating the BTree I suggest creating a
-simple table and populating it with about 1000 records. First, if you're still
-located in the `build` directory, go back to the root, then create the database
-file and start the `sqlite` shell program:
+SQLite 2.x.x has a function called `sqliteBtreePageDump` which
+prints an entire BTree to `STDOUT`, including page numbers, children pointers
+and payload (key + data). I added some options to the SQLite shell to avoid
+uncommenting and recompiling the code all over again when you need to print the
+BTree:
 
 ```bash
+sqlite> .help
+
+# Default SQLite options here...
+
+CUSTOM OPTIONS
+.path ON|OFF           Prints the page numbers acquired when executing SQL
+.keyhash ON|OFF        Prints the hash generated for the given key in an SQL statement
+.btree PAGE FILE       Prints the Btree rooted on PAGE to FILE (or STDOUT if ommited)
+```
+
+Here's an example of how you can use these options. First, create a database
+file and open the SQLite shell:
+
+```bash
+# Move back to the root if you're still inside the build directory
 cd ..
+
+# Create the DB file
 touch db.sqlite
+
+# Open the shell
 ./build/sqlite ./db.sqlite
 ```
 
-Now create a simple table:
+Now create a simple table like this one:
 
 ```sql
 CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(255));
 ```
 
-Then open another terminal and generate a script to insert many users at once:
+Once that's done, you need to populate the table with some records. Open a new
+terminal and use the [`inserts.sh`](./inserts.sh) script to generate a `.sql`
+file that you can execute at once:
 
 ```bash
-file="insert.sql"
-
-echo "BEGIN TRANSACTION;" > $file
-for i in {1..1000}; do
-    echo "INSERT INTO users (id, name) VALUES ($i, 'User Name $i');" >> $file
-done
-echo "COMMIT;" >> $file
-
+./inserts.sh > inserts.sql
 ```
 
-Go back to `sqlite` shell again and execute the SQL script:
+Go back to the SQLite shell that you opened previously and execute the SQL file:
 
 ```bash
-.read insert.sql
+.read inserts.sql
 ```
 
-Next time you insert a new row, the entire BTree is going to be printed again,
-so you can simply close the current `sqlite` shell
-using <kbd>CTRL</kbd> + <kbd>D</kbd> or `.quit`, open a new one and redirect
-STDOUT to a file:
-
-```bash
-./build/sqlite ./db.sqlite > pages.txt
-```
-
-You won't see any output, but you can still write SQL statements:
+Now you need to find the page numbers of the primary key index root node and the
+table data root node (they are 2 different B-Trees stored in the same file). For
+that you can use the `sqlite_master` table:
 
 ```sql
-INSERT INTO users (id, name) VALUES (0, 'Print the Btree!');
+SELECT type, name, rootpage FROM sqlite_master;
 ```
 
-Now you can close the shell again and you should see all the pages in your file.
+You'll get something like this as the output:
+
+```text
+table|users|4
+index|(users autoindex 1)|3
+```
+
+In this case, the root page of the index is 3 while the root page of the data
+is 4. Dump both B-Trees in their own file:
+
+```
+.btree 3 users.index
+.btree 4 users.data
+```
+
+You'll see something like this if you open the files:
+
+`users.index`
+```bash
+PAGE 3:
+cell  0: i=8..31      chld=621  nk=12   nd=0    payload: key=b0G3Wt1 data=6480..........
+cell  1: i=32..55     chld=622  nk=12   nd=0    payload: key=b0G3XcH data=3456..........
+cell  2: i=56..79     chld=1173 nk=12   nd=0    payload: key=b0G3Y1H data=1728..........
+                right_chld=1724
+freeblock  0: i=80..511    size=432  total=432
+
+# Rest of pages
+```
+
+`users.data`
+
+```bash
+PAGE 4:
+cell  0: i=8..47      chld=383  nk=4    nd=23   payload: key=2197 data=...7804.User Name
+cell  1: i=48..87     chld=384  nk=4    nd=23   payload: key=4394 data=...5607.User Name
+cell  2: i=88..127    chld=767  nk=4    nd=23   payload: key=6591 data=...3410.User Name
+cell  3: i=128..167   chld=1149 nk=4    nd=23   payload: key=8619 data=...1382.User Name
+                right_chld=1531
+
+# Rest of pages
+```
+
+Now turn on all the custom options:
+
+```
+.path ON
+.keyhash ON
+```
+
+Execute a simple statement like this one:
+
+```sql
+SELECT rowid, * FROM users WHERE id = 25;
+```
+
+You'll get an output similar to this:
+
+```text
+Reading page 1
+Reading page 4
+Reading page 1
+Reading page 3
+Generate hash for 25.000000 -> 0G1v
+Reading page 3
+Reading page 621
+Reading page 53
+Reading page 8
+Reading page 4
+Reading page 1531
+Reading page 1740
+Reading page 1735
+25|User Name 25
+```
+
+Copy the generated hash for key 25 (`0G1v` in this example) and
+<kbd>CTRL</kbd> + <kbd>F</kbd> it in the `users.index` file. You'll find a line
+like this one:
+
+```text
+payload: key=b0G1v   data=9976
+```
+
+The data is the `ROWID` and is located on page `8`. You can see in the path
+above that the index traversal stops at page `8` and then the data traversal
+starts at page `4`. The index B-Tree is used to obtain the `ROWID` of the
+record, and then the data B-Tree is used to get the actual tuple (columns). You
+can <kbd>CTRL</kbd> + <kbd>F</kbd> the `ROWID` in the data file to check that
+the B-Tree traversal is correct (in this example, starts at page `4` and stops
+at `1735`).
+
+You can experiment with different page sizes by changing the value of
+`SQLITE_PAGE_SIZE` at [`./src/pager.h`](./src/pager.h#27).
 
 ## Debugging
 
 I added [`.vscode/launch.json`](./.vscode/launch.json) to easily step through
 the source. I suggest setting up a break point on line 1000 at
-[`./src/shell.c`](./src/shell.c#L1000) and then clicking on the Run/Debug icon.
+[`./src/shell.c`](./src/shell.c#L1081) and then clicking on the Run/Debug icon.
 You can see where the code goes from there by writing commands or SQL in the
 `sqlite` shell that opens up.

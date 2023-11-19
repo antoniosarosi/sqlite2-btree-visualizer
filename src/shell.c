@@ -18,6 +18,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "sqlite.h"
+#include "sqliteInt.h"
 #include <ctype.h>
 
 #if !defined(_WIN32) && !defined(WIN32) && !defined(__MACOS__)
@@ -494,8 +495,18 @@ static char zHelp[] =
   ".show                  Show the current values for various settings\n"
   ".tables ?PATTERN?      List names of tables matching a pattern\n"
   ".timeout MS            Try opening locked tables for MS milliseconds\n"
-  ".width NUM NUM ...     Set column widths for \"column\" mode\n"
+  ".width NUM NUM ...     Set column widths for \"column\" mode\n\n"
+
+  "CUSTOM OPTIONS\n"
+  ".path ON|OFF           Prints the page numbers acquired when executing SQL\n"
+  ".keyhash ON|OFF        Prints the hash generated for the given key in an SQL statement\n"
+  ".btree ROOT FILE       Prints the Btree rooted on PAGE to FILE (or STDOUT if ommited)\n"
 ;
+
+struct CustomOptions custom_options = {
+    .print_hash = 0,
+    .print_path = 0,
+};
 
 /* Forward reference */
 static void process_input(struct callback_data *p, FILE *in);
@@ -925,7 +936,77 @@ static int do_meta_command(char *zLine, struct callback_data *p){
     for(j=1; j<nArg && j<ArraySize(p->colWidth); j++){
       p->colWidth[j-1] = atoi(azArg[j]);
     }
-  }else
+  }
+
+  // CUSTOM OPTIONS
+
+  else if (c == 'b' && n > 1 && strncmp(azArg[0], "btree", n) == 0){
+    int page_number = 0;
+
+    if (nArg < 2) {
+      fprintf(stderr, (
+        ".btree needs the root page number.\n"
+        "Use SELECT name,rootpage from sqlite_master to find roots of indexes/tables.\n"
+      ));
+      return SQLITE_OK;
+    }
+
+    page_number = strtol(azArg[1], NULL, 10);
+
+    if (page_number == 0) {
+      fprintf(stderr, "Invalid page number: %d\n", azArg[1]);
+      return SQLITE_OK;
+    }
+
+    custom_options.btree_file = stdout;
+    if (nArg == 3) {
+      custom_options.btree_file = fopen(azArg[2], "w");
+      if (custom_options.btree_file == NULL) {
+        fprintf(stderr, "Can't open file: %s. Will not print Btree.", azArg[2]);
+        return SQLITE_OK;
+      }
+    }
+
+    open_db(p);
+
+    sqliteBtreePageDump(p->db->aDb[0].pBt, page_number, 1);
+
+    fflush(custom_options.btree_file);
+    if (custom_options.btree_file != stdout && custom_options.btree_file != stderr) {
+      fclose(custom_options.btree_file);
+    }
+  }
+  else if (c == 'p' && n > 1 && strncmp(azArg[0], "path", n) == 0){
+    char *z = azArg[1];
+    for(int j=0; z[j]; j++)
+        if( isupper(z[j]) )
+            z[j] = tolower(z[j]);
+
+    if (strcmp(z,"on")==0) {
+      custom_options.print_path = 1;
+    } else if(strcmp(z,"yes") == 0) {
+      custom_options.print_path = 1;
+    } else {
+      custom_options.print_path = 0;
+    }
+  }
+
+  else if (c == 'k' && n > 1 && strncmp(azArg[0], "keyhash", n) == 0){
+    char *z = azArg[1];
+    for(int j=0; z[j]; j++)
+        if( isupper(z[j]) )
+            z[j] = tolower(z[j]);
+
+    if (strcmp(z,"on")==0) {
+      custom_options.print_hash = 1;
+    } else if(strcmp(z,"yes") == 0) {
+      custom_options.print_hash = 1;
+    } else {
+      custom_options.print_hash = 0;
+    }
+  }
+
+  else
 
   {
     fprintf(stderr, "unknown command or invalid arguments: "

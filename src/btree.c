@@ -53,6 +53,7 @@
 #include "pager.h"
 #include "btree.h"
 #include <assert.h>
+#include <stdio.h>
 
 /* Forward declarations */
 static BtOps sqliteBtreeOps;
@@ -2655,9 +2656,11 @@ static int fileBtreeInsert(
   }
   insertCell(pBt, pPage, pCur->idx, &newCell, szNew);
   rc = balance(pCur->pBt, pPage, pCur);
-  sqliteBtreePageDump(pCur->pBt, pCur->pgnoRoot, 1);
-  fflush(stdout);
+
   pCur->eSkip = SKIP_INVALID;
+
+  // sqliteBtreePageDump(pCur->pBt, pCur->pgnoRoot, 1);
+
   return rc;
 }
 
@@ -3016,10 +3019,6 @@ static int fileBtreeUpdateMeta(Btree *pBt, int *aMeta){
 ** subsystem.  None of the code that follows is used during normal operation.
 ******************************************************************************/
 
-/*
-** Print a disassembly of the given page on standard output.  This routine
-** is used for debugging and testing only.
-*/
 static int fileBtreePageDump(Btree *pBt, int pgno, int recursive){
   int rc;
   MemPage *pPage;
@@ -3027,29 +3026,64 @@ static int fileBtreePageDump(Btree *pBt, int pgno, int recursive){
   int nFree;
   u16 idx;
   char range[20];
-  unsigned char payload[20];
+
+  unsigned char payload[32] = {0};
+
+  FILE *fp = custom_options.btree_file;
+
   rc = sqlitepager_get(pBt->pPager, (Pgno)pgno, (void**)&pPage);
   if( rc ){
     return rc;
   }
-  if( recursive ) printf("PAGE %d:\n", pgno);
+
+  if( recursive ) fprintf(fp, "PAGE %d:\n", pgno);
   i = 0;
   idx = SWAB16(pBt, pPage->u.hdr.firstCell);
   while( idx>0 && idx<=SQLITE_PAGE_SIZE-MIN_CELL_SIZE ){
     Cell *pCell = (Cell*)&pPage->u.aDisk[idx];
     int sz = cellSize(pBt, pCell);
     sprintf(range,"%d..%d", idx, idx+sz-1);
-    sz = NKEY(pBt, pCell->h) + NDATA(pBt, pCell->h);
-    if( sz>sizeof(payload)-1 ) sz = sizeof(payload)-1;
-    memcpy(payload, pCell->aPayload, sz);
-    for(j=0; j<sz; j++){
+
+    int key_size = NKEY(pBt, pCell->h);
+    int data_size = NDATA(pBt, pCell->h);
+
+    if (key_size == 4) {
+      // Table page
+      int rowid = keyToInt(*((int*)pCell->aPayload));
+      int bytes_written = sprintf(payload, "key=%-4d data=", rowid);
+      memcpy(&payload[bytes_written], &pCell->aPayload[key_size], sizeof(payload) - bytes_written);
+    } else {
+      // Index page
+      int bytes_written = sprintf(payload, "key=");
+      int iter = 0;
+      // Write hash key
+      while (iter < key_size && pCell->aPayload[iter] != 0) {
+        payload[iter + bytes_written] = pCell->aPayload[iter];
+        iter++;
+      }
+      // Trailing padding ("key=" -> 4, max key size = 7)
+      while (iter + bytes_written < 4 + 7) {
+        payload[iter + bytes_written] = ' ';
+        bytes_written++;
+      }
+      int rowid = keyToInt(*((int*)&pCell->aPayload[iter+1]));
+      sprintf(&payload[iter + bytes_written], " data=%-4d", rowid);
+    }
+
+    // Prints characters that can't be represented with ASCII as "."
+    for(j=0; j<sizeof(payload); j++){
       if( payload[j]<0x20 || payload[j]>0x7f ) payload[j] = '.';
     }
-    payload[sz] = 0;
-    printf(
-      "cell %2d: i=%-10s chld=%-4d nk=%-4d nd=%-4d payload=%s\n",
-      i, range, (int)pCell->h.leftChild,
-      NKEY(pBt, pCell->h), NDATA(pBt, pCell->h),
+    payload[sizeof(payload) - 1] = 0;
+
+    fprintf(
+      fp,
+      "cell %2d: i=%-10s chld=%-4d nk=%-4d nd=%-4d payload: %s\n",
+      i,
+      range,
+      (int)pCell->h.leftChild,
+      key_size,
+      data_size,
       payload
     );
     if( pPage->isInit && pPage->apCell[i]!=pCell ){
@@ -3059,9 +3093,9 @@ static int fileBtreePageDump(Btree *pBt, int pgno, int recursive){
     idx = SWAB16(pBt, pCell->h.iNext);
   }
   if( idx!=0 ){
-    printf("ERROR: next cell index out of range: %d\n", idx);
+    fprintf(fp, "ERROR: next cell index out of range: %d\n", idx);
   }
-  printf("right_child: %d\n", SWAB32(pBt, pPage->u.hdr.rightChild));
+  fprintf(fp, "                right_chld=%d\n", SWAB32(pBt, pPage->u.hdr.rightChild));
   nFree = 0;
   i = 0;
   idx = SWAB16(pBt, pPage->u.hdr.firstFree);
@@ -3069,7 +3103,7 @@ static int fileBtreePageDump(Btree *pBt, int pgno, int recursive){
     FreeBlk *p = (FreeBlk*)&pPage->u.aDisk[idx];
     sprintf(range,"%d..%d", idx, idx+p->iSize-1);
     nFree += SWAB16(pBt, p->iSize);
-    printf("freeblock %2d: i=%-10s size=%-4d total=%d\n",
+    fprintf(fp, "freeblock %2d: i=%-10s size=%-4d total=%d\n",
        i, range, SWAB16(pBt, p->iSize), nFree);
     idx = SWAB16(pBt, p->iNext);
     i++;

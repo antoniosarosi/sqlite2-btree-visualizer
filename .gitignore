@@ -2,3 +2,6 @@ build
 /*.sql
 /*.txt
 /*.sqlite
+/*.data
+/*.idx
+/*.index
